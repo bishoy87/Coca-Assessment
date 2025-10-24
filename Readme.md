@@ -1,9 +1,11 @@
 # Azure VM Deployment Test
 
 ## Workflow and folder Structure
-1- Create Terraform files
-2- Create Ansible Playbook
-3- Create Azure Pipeline
+```python
+1- Create Terraform files.
+2- Create Ansible Playbook.
+3- Create Azure Pipeline.
+```
 
 ## Folder Structure
 ```python
