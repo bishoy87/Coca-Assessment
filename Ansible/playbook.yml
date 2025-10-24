@@ -1,0 +1,74 @@
+---
+- name: Get VM Facts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Get facts for one VM
+      azure.azcollection.azure_rm_virtualmachine_info:
+        resource_group: "{{ resource_group }}"
+        name: "{{ vm_name }}"
+      register: azure_vm_info
+
+    # Optional: Debug VM info structure
+    - name: Debug VM info
+      ansible.builtin.debug:
+        var: azure_vm_info
+
+    - name: Get NIC facts
+      azure.azcollection.azure_rm_networkinterface_info:
+        resource_group: "{{ resource_group }}"
+        name: "{{ azure_vm_info.vms[0].network_interface_names[0] }}"
+      register: nic_info
+
+    # Optional: Debug NIC info structure
+    - name: Debug NIC info
+      ansible.builtin.debug:
+        var: nic_info
+
+    - name: Get Public IP facts
+      azure.azcollection.azure_rm_publicipaddress_info:
+        resource_group: "{{ resource_group }}"
+        name: "{{ nic_info.networkinterfaces[0].ip_configurations[0].public_ip_address | split('/') | last }}"
+      register: pip_info
+
+    # Optional: Debug Public IP info structure
+    - name: Debug Public IP info
+      ansible.builtin.debug:
+        var: pip_info
+
+    - name: Add VM to in-memory inventory
+      ansible.builtin.add_host:
+        name: "{{ vm_name }}"
+        ansible_host: "{{ pip_info.publicipaddresses[0].ip_address }}"
+        ansible_user: "{{ admin_username }}"
+        ansible_ssh_pass: "{{ admin_password }}"
+        ansible_ssh_extra_args: '-o StrictHostKeyChecking=no'
+        groups: newly_created
+
+- name: Configure the VM
+  hosts: newly_created
+  become: true
+  gather_facts: true
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: yes
+      changed_when: false
+
+    - name: Install Apache
+      ansible.builtin.apt:
+        name: apache2
+        state: present
+
+    - name: Create a simple index.html
+      ansible.builtin.copy:
+        content: "<h1>Hello from Ansible-configured Azure VM!</h1>"
+        dest: /var/www/html/index.html
+        mode: '0644'
+
+    - name: Ensure Apache is running
+      ansible.builtin.service:
+        name: apache2
+        state: started
+        enabled: true

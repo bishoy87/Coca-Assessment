@@ -1,0 +1,118 @@
+trigger:
+  - main
+
+variables:
+  - group: var-group
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+  - stage: Terraform
+    displayName: "Terraform Deployment"
+    jobs:
+    - job: TerraformJob
+      displayName: "Run Terraform Commands"
+      pool:
+        vmImage: 'ubuntu-latest'
+      steps:
+  
+      # terraform installation
+      - task: TerraformInstaller@1
+        displayName: 'Install Terraform'
+        inputs:
+          terraformVersion: '1.13.4'
+  
+      # terraform version check
+      - script: terraform -version
+        displayName: 'Check Terraform Installation'
+  
+      # terraform init  
+      - task: TerraformTaskV4@4
+        displayName: 'Terraform Init'
+        inputs:
+          command: 'init'
+          workingDirectory: '$(System.DefaultWorkingDirectory)/Terraform'
+          backendType: 'azurerm'
+          backendServiceArm: '$(azureServiceConnection)'
+          ensureBackend: true
+          backendAzureRmResourceGroupName: 'azure-pocs'
+          backendAzureRmStorageAccountName: 'tfstatestorage12389'
+          backendAzureRmContainerName: 'tfstate'
+          backendAzureRmKey: 'terraform.tfstate'
+  
+      # terraform plan
+      - task: TerraformTaskV4@4
+        displayName: 'Terraform Plan'
+        inputs:
+          command: 'plan'
+          workingDirectory: '$(System.DefaultWorkingDirectory)/Terraform'
+          environmentServiceName: '$(azureServiceConnection)'
+          environmentServiceNameAzureRM: 'azure-subscription' 
+          commandOptions: >
+              -var "resource_group=$(resource_group)"
+              -var "vm_name=$(vm_name)"
+              -var "admin_username=$(admin_username)"
+              -var "admin_password=$(admin_password)"
+              -lock=false 
+              -out=tfplan
+  
+      # terraform apply   
+      - task: TerraformTaskV4@4
+        displayName: 'Terraform Apply'
+        inputs:
+          command: 'apply'
+          workingDirectory: '$(System.DefaultWorkingDirectory)/Terraform'
+          environmentServiceName: '$(azureServiceConnection)'
+          commandOptions: '-lock=false tfplan'
+          environmentServiceNameAzureRM: 'azure-subscription' 
+
+
+
+  # =========================
+  # Stage 2: Run Ansible
+  # =========================
+  - stage: Ansible
+    displayName: 'Configure VM using Ansible'
+    dependsOn: Terraform
+    variables:
+      - group: var-group
+      
+    jobs:
+      - job: ConfigureVM
+        steps:
+          - script: |
+              set -e
+              echo ################ Create and activate Python virtual environment
+              python3 -m venv ansible_azure_env
+              source ansible_azure_env/bin/activate
+              
+              echo ################ Upgrade tools
+              pip install --upgrade pip setuptools wheel
+              
+              echo ################ Install Ansible and the Azure collection
+              pip install "ansible>=2.15.0,<13.0.0"  # Pin to <13 to avoid extras deprecation
+              ansible-galaxy collection install azure.azcollection --force  # --force to reinstall if needed
+              
+              echo ################ Install ALL Azure dependencies from the collection's official requirements file
+              ls -lha ~/.ansible/collections/ansible_collections/azure/azcollection
+              pip install -r ~/.ansible/collections/ansible_collections/azure/azcollection/requirements.txt
+              
+              echo ################ Set ARM environment variables for Ansible
+              export ARM_CLIENT_ID='$(armClientIdVar)'
+              export ARM_CLIENT_SECRET='$(armClientSecretVar)'
+              export ARM_TENANT_ID='$(armTenantIdVar)'
+              export ARM_SUBSCRIPTION_ID='$(armSubscriptionIdVar)'
+              
+              echo ################ Login to Azure using ARM environment variables
+              az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID"
+              az account set --subscription "$ARM_SUBSCRIPTION_ID"
+
+              echo ################ Run your playbook
+              ansible-playbook playbook.yml \
+                -e "resource_group=$(resource_group)" \
+                -e "vm_name=$(vm_name)" \
+                -e "admin_username=$(admin_username)" \
+                -e "admin_password=$(admin_password)" \
+            workingDirectory: $(System.DefaultWorkingDirectory)/Ansible
+            displayName: "Run Ansible Playbook"
