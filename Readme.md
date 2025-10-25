@@ -82,7 +82,7 @@ Before running the pipeline or executing Terraform/Ansible scripts, ensure the f
 ## Succseded pipeline
 ![alt text](images/image-3.png)
 
-## tfstate on the bazkend 
+## tfstate on the backend 
 
 ![alt text](images/image-6.png)
 
