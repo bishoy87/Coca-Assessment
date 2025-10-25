@@ -82,9 +82,14 @@ Before running the pipeline or executing Terraform/Ansible scripts, ensure the f
 ## Succseded pipeline
 ![alt text](images/image-3.png)
 
+## tfstate on the bazkend 
+
+![alt text](images/image-6.png)
+
 ## Resources after provisioned
 
 ![alt text](images/image-5.png)
 
 ## VM after provisioned and configured
 ![alt text](images/image-4.png)
+
